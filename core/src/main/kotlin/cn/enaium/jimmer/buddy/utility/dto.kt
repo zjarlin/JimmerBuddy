@@ -23,6 +23,7 @@ import cn.enaium.jimmer.buddy.extensions.dto.psi.DtoPsiFile
 import cn.enaium.jimmer.buddy.extensions.dto.psi.DtoPsiProp
 import cn.enaium.jimmer.buddy.extensions.dto.psi.DtoPsiRoot
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.roots.ProjectFileIndex
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.JavaPsiFacade
 import com.intellij.psi.PsiElement
@@ -55,12 +56,32 @@ fun Project.createDtoProp(name: String): DtoPsiProp? {
 fun DtoPsiDtoType.generatedName(): String? {
     val name = name?.value ?: return null
     val dtoPsiRoot = findParentOfType<DtoPsiRoot>() ?: return null
-    val exportType = dtoPsiRoot.qualifiedName() ?: return null
-    val exportPackage =
-        dtoPsiRoot.exportStatement?.packageParts?.qualifiedName()
-            ?: "${exportType.substringBeforeLast(".")}.dto"
+    val exportPackage = dtoPsiRoot.generatedExportPackage()
+    val sourcePackage = dtoPsiRoot.generatedSourcePackage()
+    val packageName = exportPackage ?: sourcePackage ?: return null
 
-    return "$exportPackage.$name"
+    return "$packageName.$name"
+}
+
+private fun DtoPsiRoot.generatedExportPackage(): String? {
+    val exportType = qualifiedName() ?: return null
+    return exportStatement?.packageParts?.qualifiedName()
+        ?: "${exportType.substringBeforeLast(".")}.dto"
+}
+
+private fun DtoPsiRoot.generatedSourcePackage(): String? {
+    val file = containingFile?.virtualFile ?: return null
+    val sourceRoot = ProjectFileIndex.getInstance(project).getSourceRootForFile(file) ?: return null
+    val relativePath = file.parent?.path?.removePrefix("${sourceRoot.path}/") ?: return null
+    if (relativePath == file.parent?.path) {
+        return null
+    }
+
+    return relativePath
+        .split('/')
+        .filter { it.isNotBlank() }
+        .joinToString(".")
+        .ifBlank { null }
 }
 
 fun DtoPsiDtoType.generatedReferences(): List<PsiElement> {

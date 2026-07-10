@@ -40,6 +40,7 @@ import java.awt.event.KeyEvent
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
 import javax.swing.DefaultListCellRenderer
+import javax.swing.Icon
 import javax.swing.JComponent
 import javax.swing.JLabel
 import javax.swing.JList
@@ -63,6 +64,7 @@ internal object DtoReferencePreview {
         DtoReferencePreviewPopup(validReferences).show(event)
         return true
     }
+
 }
 
 private class DtoReferencePreviewPopup(
@@ -75,6 +77,13 @@ private class DtoReferencePreviewPopup(
     private var popup: JBPopup? = null
 
     fun show(event: MouseEvent) {
+        val createdPopup = createPopup()
+        popup = createdPopup
+        Disposer.register(createdPopup, Disposable { releaseEditor() })
+        createdPopup.show(RelativePoint(event))
+    }
+
+    private fun createPopup(): JBPopup {
         referenceList.selectionMode = ListSelectionModel.SINGLE_SELECTION
         referenceList.cellRenderer = DtoReferenceListRenderer()
         referenceList.selectedIndex = 0
@@ -101,7 +110,7 @@ private class DtoReferencePreviewPopup(
         updatePreview(referenceList.selectedValue)
 
         val content = createContent()
-        val createdPopup = JBPopupFactory.getInstance()
+        return JBPopupFactory.getInstance()
             .createComponentPopupBuilder(content, referenceList)
             .setTitle("Choose DTO Reference")
             .setResizable(true)
@@ -109,10 +118,6 @@ private class DtoReferencePreviewPopup(
             .setRequestFocus(true)
             .setProject(project)
             .createPopup()
-
-        popup = createdPopup
-        Disposer.register(createdPopup, Disposable { releaseEditor() })
-        createdPopup.show(RelativePoint(event))
     }
 
     private fun createContent(): JComponent {
@@ -225,16 +230,27 @@ private class DtoReferenceListRenderer : DefaultListCellRenderer() {
         isSelected: Boolean,
         cellHasFocus: Boolean,
     ): Component {
-        val component = super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus)
+        val component = super.getListCellRendererComponent(list, "", index, isSelected, cellHasFocus)
         val label = component as JLabel
         val element = value as? PsiElement ?: return label
-        val presentation = runReadOnly {
-            element.referencePresentation()
+        val cell = runReadOnly {
+            if (!element.isValid) {
+                return@runReadOnly DtoReferenceListCell(
+                    presentation = DtoReferencePresentation("Invalid reference", ""),
+                    icon = null,
+                )
+            }
+
+            DtoReferenceListCell(
+                presentation = element.referencePresentation(),
+                icon = element.getIcon(0),
+            )
         }
 
+        val presentation = cell.presentation
         label.text = "${presentation.locationText}  ${presentation.lineText}"
         label.toolTipText = presentation.lineText
-        label.icon = element.getIcon(0)
+        label.icon = cell.icon
         return label
     }
 }
@@ -254,6 +270,11 @@ private data class DtoReferenceNavigationLocation(
 private data class DtoReferencePresentation(
     val lineText: String,
     val locationText: String,
+)
+
+private data class DtoReferenceListCell(
+    val presentation: DtoReferencePresentation,
+    val icon: Icon?,
 )
 
 private fun PsiElement.referencePresentation(): DtoReferencePresentation {
